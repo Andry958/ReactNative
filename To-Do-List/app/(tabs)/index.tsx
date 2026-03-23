@@ -1,23 +1,47 @@
 import { Image } from 'expo-image';
 import { StyleSheet, TextInput, Pressable } from 'react-native';
-import { useState } from 'react';
-import { HelloWave } from '@/components/hello-wave';
+import { useState, useEffect } from 'react';
+
+import { addItem, deleteItem, getItems, migrateDbIfNeeded } from '@/services/db';
+
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { createTodo, Todo, Priority } from '../todo';
+import { ToDoItem, Priority } from '../../hooks/ToToiItem';
 
 export default function HomeScreen() {
-  const [tasks, setTasks] = useState<Todo[]>([]);
+  const [tasks, setTasks] = useState<ToDoItem[]>([]);
   const [input, setInput] = useState('');
   const [priority, setPriority] = useState<Priority>(Priority.Medium);
 
-  const addTask = () => {
-    if (input.trim()) {
-      const nextId = tasks.length > 0 ? tasks[tasks.length - 1].id + 1 : 1;
-      setTasks([...tasks, createTodo(nextId, input.trim(), priority)]);
-      setInput('');
-    }
+  useEffect(() => {
+    init();
+  }, []);
+
+  const init = async () => {
+    const SQLite = await import("expo-sqlite");
+    const db = SQLite.openDatabaseSync("ToDo.db");
+
+    await migrateDbIfNeeded(db);
+    loadTasks();
+  };
+
+  const loadTasks = async () => {
+    const data = await getItems();
+    setTasks(data);
+  };
+
+  const addTask = async () => {
+    if (!input.trim()) return;
+
+    const newTask = await addItem(input.trim(), priority);
+    setTasks([...tasks, newTask]);
+    setInput('');
+  };
+
+  const removeTask = async (id: number) => {
+    await deleteItem(id);
+    setTasks(tasks.filter((t) => t.id !== id));
   };
 
   return (
@@ -97,6 +121,12 @@ export default function HomeScreen() {
               <ThemedText style={styles.taskPriority}>
                 Priority: {task.priority}
               </ThemedText>
+
+              <Pressable
+                onPress={() => removeTask(task.id)}
+                style={styles.deleteButton}>
+                <ThemedText style={{ color: 'white' }}>Delete</ThemedText>
+              </Pressable>
             </ThemedView>
           ))}
         </ThemedView>
@@ -186,11 +216,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#A1CEDC',
     marginBottom: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
   },
 
   taskId: {
@@ -216,5 +241,13 @@ const styles = StyleSheet.create({
     color: '#0a7ea4',
     marginTop: 2,
     fontWeight: 'bold',
+  },
+
+  deleteButton: {
+    marginTop: 6,
+    backgroundColor: 'red',
+    padding: 6,
+    borderRadius: 4,
+    alignItems: 'center',
   },
 });

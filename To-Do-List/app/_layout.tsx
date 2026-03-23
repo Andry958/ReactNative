@@ -4,15 +4,20 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { migrateDbIfNeeded } from '@/services/db';
+import { SQLiteProvider } from 'expo-sqlite';
 
 export const unstable_settings = {
   anchor: '(tabs)',
 };
+const DATABASE_NAME = "ToDo.db";
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
 
   return (
+    <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrateDbIfNeeded}>
+
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -20,5 +25,6 @@ export default function RootLayout() {
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
+    </SQLiteProvider>
   );
 }
