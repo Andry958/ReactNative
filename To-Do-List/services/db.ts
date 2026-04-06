@@ -1,59 +1,38 @@
 import { Priority, ToDoItem } from "@/hooks/ToToiItem";
-import * as SQLite from "expo-sqlite";
 import { SQLiteDatabase } from "expo-sqlite";
 
-const db = SQLite.openDatabaseSync("ToDo.db");
-
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
-  const DATABASE_VERSION = 1;
+  const DATABASE_VERSION = 2;
 
-  let { user_version: currentDbVersion } =
-    await db.getFirstAsync<any>("PRAGMA user_version");
+  // Встановлюємо режим WAL
+  await db.execAsync(`PRAGMA journal_mode = WAL;`);
 
-  if (currentDbVersion >= DATABASE_VERSION) return;
+  // Створюємо таблицю, якщо її ще нема
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS todo (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      text TEXT NOT NULL,
+      date TEXT NOT NULL,
+      priority INTEGER NOT NULL,
+      completed INTEGER NOT NULL DEFAULT 0
+    );
+  `);
 
-  if (currentDbVersion === 0) {
+  // Додаємо колонку completed (ігнорує помилку, якщо вже є)
+  try {
     await db.execAsync(`
-      PRAGMA journal_mode = WAL;
-
-      CREATE TABLE IF NOT EXISTS todo (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        text TEXT NOT NULL,
-        date TEXT NOT NULL,
-        priority INTEGER NOT NULL
-      );
+      ALTER TABLE todo ADD COLUMN completed INTEGER NOT NULL DEFAULT 0;
     `);
-
-    currentDbVersion = 1;
+  } catch (e) {
+    // нічого не робимо — колонка вже існує
   }
 
+  // Оновлюємо версію бази
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
 }
+// 🔹 CRUD
 
-export async function addItem(
-  text: string,
-  priority: Priority
-): Promise<ToDoItem> {
-  const date = new Date().toISOString();
-
-  const result = await db.runAsync(
-    `INSERT INTO todo (text, date, priority) VALUES (?, ?, ?);`,
-    [text, date, priority]
-  );
-
-  return {
-    id: result.lastInsertRowId,
-    text,
-    date: new Date(date),
-    priority,
-  };
-}
-
-export async function deleteItem(id: number) {
-  await db.runAsync(`DELETE FROM todo WHERE id = ?;`, [id]);
-}
-
-export async function getItems(): Promise<ToDoItem[]> {
+export async function getItems(db: SQLiteDatabase): Promise<ToDoItem[]> {
   const result = await db.getAllAsync<any>("SELECT * FROM todo;");
 
   return result.map((item) => ({
@@ -62,13 +41,45 @@ export async function getItems(): Promise<ToDoItem[]> {
   }));
 }
 
-export async function updateItem(item: ToDoItem) {
+export async function addItem(
+  db: SQLiteDatabase,
+  text: string,
+  priority: Priority,
+  completed: boolean
+): Promise<ToDoItem> {
+  const date = new Date().toISOString();
+
+  const result = await db.runAsync(
+    `INSERT INTO todo (text, date, priority, completed) VALUES (?, ?, ?, ?);`,
+    [text, date, priority, completed ? 1 : 0]
+  );
+
+  return {
+    id: result.lastInsertRowId,
+    text,
+    date: new Date(date),
+    priority,
+    completed,
+  };
+}
+
+export async function deleteItem(db: SQLiteDatabase, id: number) {
+  await db.runAsync(`DELETE FROM todo WHERE id = ?;`, [id]);
+}
+export async function toggleItem(db: SQLiteDatabase, id: number, completed: boolean) {
+  await db.runAsync(`UPDATE todo SET completed = ? WHERE id = ?;`, [
+    completed ? 1 : 0,
+    id,
+  ]);
+}
+export async function updateItem(db: SQLiteDatabase, item: ToDoItem) {
   await db.runAsync(
-    `UPDATE todo SET text = ?, date = ?, priority = ? WHERE id = ?;`,
+    `UPDATE todo SET text = ?, date = ?, priority = ?, completed = ? WHERE id = ?;`,
     [
       item.text,
       item.date.toISOString(),
       item.priority,
+      item.completed ? 1 : 0,
       item.id,
     ]
   );
